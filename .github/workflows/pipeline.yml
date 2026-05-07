@@ -346,6 +346,7 @@ jobs:
       - name: Coverage summary
         run: |
           gcovr \
+            --config /dev/null \
             --root "$GITHUB_WORKSPACE" \
             --object-directory twister-out/ \
             --filter hello_app/src/ \
