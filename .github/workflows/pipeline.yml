@@ -339,24 +339,18 @@ jobs:
             --coverage-basedir "$GITHUB_WORKSPACE" \
             -o twister-out \
             --inline-logs
-
-          # Debug: check if .gcda files exist
-          echo "=== GCDA files ==="
-          find twister-out/ -name "*.gcda" | head -20
-
-          echo "=== Coverage XML ==="
-          head -5 twister-out/coverage.xml || echo "No coverage.xml found"
         env:
           ZEPHYR_TOOLCHAIN_VARIANT: host   # native_posix uses system GCC — no SDK needed
           ZEPHYR_BASE: ${{ github.workspace }}/zephyr
 
-      # Requires CODECOV_TOKEN secret (free for public repos at codecov.io)
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        continue-on-error: true
-        with:
-          files: twister-out/coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Coverage summary
+        run: |
+          gcovr \
+            --root "$GITHUB_WORKSPACE" \
+            --object-directory twister-out/ \
+            --filter hello_app/src/ \
+            --xml twister-out/coverage-filtered.xml \
+            --print-summary
 
       - name: Upload Twister results
         uses: actions/upload-artifact@v7.0.1
@@ -471,6 +465,8 @@ jobs:
     runs-on: ubuntu-22.04
     needs: sast-sca
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
