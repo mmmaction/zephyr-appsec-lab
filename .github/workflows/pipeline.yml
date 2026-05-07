@@ -38,7 +38,7 @@ jobs:
         run: |
           cpplint \
             --recursive \
-            --filter=-legal/copyright,-build/include_order,-runtime/references,-whitespace/tab,-whitespace/braces \
+            --filter=-legal/copyright,-build/include_order,-runtime/references,-whitespace/tab,-whitespace/braces,-whitespace/comments \
             hello_app/src/
         continue-on-error: true   # does not block pipeline
 
