@@ -1,11 +1,12 @@
+#include "hello_app/src/app_logic.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
 int main(void)
 {
 	printk("Hello, Zephyr!\n");
-	printk("Board:       %s\n", CONFIG_BOARD);
-	printk("nRF Connect SDK v2.2.0 / Zephyr RTOS v3.2.x\n");
+	printk("Board:       %s\n", app_board_name());
+	printk("Zephyr RTOS v3.2.0\n");
 
 	while (1) {
 		k_sleep(K_SECONDS(1));

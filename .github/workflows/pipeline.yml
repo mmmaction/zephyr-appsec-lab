@@ -377,6 +377,11 @@ jobs:
           path: twister-out/
           retention-days: 30
 
+      - name: Show build log on failure
+        if: failure()
+        run: |
+          find twister-out/ -name "build.log" | head -5 | xargs -I{} sh -c 'echo "=== {} ==="; cat "{}"; echo'
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4 · SAST / SCA
 # Tools:

@@ -1,3 +1,4 @@
+#include "hello_app/src/app_logic.h"
 #include <version.h> /* KERNEL_VERSION_MAJOR, KERNEL_VERSION_MINOR, KERNEL_PATCHLEVEL */
 #include <zephyr/ztest.h>
 
@@ -16,4 +17,13 @@ ZTEST(hello_suite, test_kernel_version)
 
 	TC_PRINT("Zephyr version: %d.%d.%d\n", KERNEL_VERSION_MAJOR, KERNEL_VERSION_MINOR,
 		 KERNEL_PATCHLEVEL);
+}
+
+ZTEST(hello_suite, test_validate_input)
+{
+	zassert_equal(validate_input(0), 0, "0 should be valid");
+	zassert_equal(validate_input(50), 0, "50 should be valid");
+	zassert_equal(validate_input(99), 0, "99 should be valid");
+	zassert_equal(validate_input(-1), -1, "-1 should be invalid");
+	zassert_equal(validate_input(100), -1, "100 should be invalid");
 }
