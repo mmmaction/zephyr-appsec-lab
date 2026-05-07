@@ -33,7 +33,16 @@ The embedded counterpart to [mobile-appsec-lab](https://github.com/mmmaction/mob
 
 SBOM is generated automatically in the Build stage using **`west spdx`** (understands the Zephyr CMake/west build graph) and converted to CycloneDX JSON via **syft** for downstream tooling (DependencyTrack, Trivy).
 
-> **Known gap (Zephyr v3.2.x):** `west spdx` does not fully capture transitive west module dependencies. Documented in `sbom-gaps.md` (archived with each build). Upgrade to Zephyr v3.4+ for complete output.
+> **Known gap (Zephyr v3.2.x):** `west spdx` in v3.2.x captures file hashes only — no component names, no versions, no license metadata. CVE matching via SBOM is not possible. Documented in `sbom-gaps.md` (archived with each build). **Mitigation:** `cve-bin-tool` scans the compiled `zephyr.elf` binary directly. Upgrade to Zephyr v3.4+ for complete SPDX output.
+
+### SBOM Tool Evaluation
+
+| Tool | Understands Zephyr? | Output | Verdict |
+|---|---|---|---|
+| `trivy fs` | ❌ No | Empty SBOM | Does not understand west/CMake |
+| `west spdx` | ✅ Yes | SPDX 2.3 | **Primary** — walks actual build graph; incomplete in v3.2.x |
+| `syft convert` | ✅ (converter) | CycloneDX | Converts SPDX → CDX for downstream tools |
+| `cve-bin-tool` | ✅ Yes | JSON CVE report | **Mitigation** — binary scan, works regardless of SBOM quality |
 
 ## Hardware Bill of Materials (HBOM)
 
@@ -53,7 +62,7 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 | Stage | What it does | Key tools |
 |---|---|---|
 | **Lint** | Code style & formatting check (fast-fail) | `cpplint`, `clang-format`, `cmake-format` |
-| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX) |
+| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM + CVE scan | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX), `cve-bin-tool` |
 | **Unit Test** | Run tests on `native_posix` with coverage | Zephyr Twister, Ztest, `gcovr` |
 | **SAST / SCA** | Static analysis + vulnerability/license/secret scan | `cppcheck`, Trivy SCA (via SBOM), Gitleaks |
 | **Package** | Sign firmware, archive SBOM + HBOM | `imgtool` (MCUboot), GitHub Artifacts |
@@ -64,7 +73,8 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 Build stage
   └─ west spdx → SPDX 2.3           ← primary (understands Zephyr build graph)
   └─ syft convert → CycloneDX JSON  ← for DependencyTrack + Trivy downstream
-  └─ sbom-gaps.md                   ← CRA Annex I gap documentation (v3.2.x)
+  └─ cve-bin-tool → cve-report.json  ← binary CVE scan (mitigation for v3.2.x SBOM gaps)
+  └─ sbom-gaps.md                   ← CRA Annex I gap documentation
         │
         ▼
   SAST/SCA stage consumes CycloneDX SBOM
@@ -93,7 +103,7 @@ Build stage
 
 ### Prerequisites
 
-- [nRF Connect SDK v2.2.0](https://developer.nordicsemi.com/nRF_Connect_SDK/doc/2.2.0/nrf/gs_installing.html) (includes Zephyr SDK v0.15.1)
+- Zephyr SDK v0.15.1 (ARM toolchain) — [install guide](https://docs.zephyrproject.org/3.2.0/develop/toolchains/zephyr_sdk.html)
 - `west` (`pip install west`)
 
 ### Build

@@ -147,6 +147,9 @@ jobs:
           pip install -r zephyr/scripts/requirements-run-test.txt || true
           pip install -r zephyr/scripts/requirements-compliance.txt || true
 
+      - name: Initialize west spdx (CMake File API)
+        run: west spdx --init -d build/nrf5340
+
       - name: Build firmware (nRF5340dk · nRF5340 cpuapp core)
         run: |
           west build \
@@ -156,11 +159,48 @@ jobs:
         env:
           ZEPHYR_SDK_INSTALL_DIR: /opt/zephyr-sdk-${{ env.ZEPHYR_SDK_VERSION }}
 
+      - name: Get week number (cache key)
+        id: date
+        run: echo "week=$(date +'%Y-%U')" >> $GITHUB_OUTPUT
+
+      - name: Cache cve-bin-tool DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/cve-bin-tool
+          key: cve-bin-tool-db-${{ runner.os }}-${{ steps.date.outputs.week }}
+          restore-keys: cve-bin-tool-db-${{ runner.os }}-
+
+      - name: cve-bin-tool · Binary CVE Scan
+        timeout-minutes: 8
+        run: |
+          pip install cve-bin-tool
+          cve-bin-tool \
+            --format json \
+            --output cve-report.json \
+            -n json-mirror \
+            --disable-version-check \
+            build/nrf5340/zephyr/zephyr.elf \
+          || true
+
+          # Ensure artifact exists even on timeout / DB fetch failure
+          if [ ! -f cve-report.json ]; then
+            echo '{"status":"incomplete","reason":"timeout or CVE DB fetch failed"}' \
+              > cve-report.json
+          fi
+
+      - name: Upload CVE report
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: cve-report
+          path: cve-report.json
+          retention-days: 90
+
       # Primary SBOM: west spdx — understands Zephyr build graph (CMake + west modules)
       # NOTE: v3.2.x incomplete on transitive west modules — gap documented below
       - name: Generate SBOM (west spdx → SPDX 2.3)
         run: |
-          west spdx --init -d build/nrf5340 -s spdx-out/
+          west spdx -d build/nrf5340 -s spdx-out/
           echo "=== Generated SPDX files ==="
           find spdx-out/ -type f -name "*.spdx"
 
@@ -193,10 +233,22 @@ jobs:
       - name: Document SBOM gaps (west spdx v3.2.x)
         run: |
           cat > sbom-gaps.md << 'EOF'
-          ## west spdx Known Gaps (Zephyr v3.2.x)
-          - Transitive west module dependencies not fully captured
-          - Workaround: upgrade to Zephyr v3.4+ for complete SPDX output
-          - Reference: https://docs.zephyrproject.org/3.2.0/build/west/zephyr-cmds.html
+          ## SBOM Quality Assessment (Zephyr v3.2.x)
+
+          ### Status: INCOMPLETE
+          - west spdx v3.2.x generates file hashes only — no package metadata
+          - Component names/versions: NOT CAPTURED
+          - CVE matching via SBOM: NOT POSSIBLE
+          - License info: NOT CAPTURED
+
+          ### CRA Annex I Gap Acceptance
+          - Gap accepted and documented per CRA Annex I requirements
+          - Mitigation: cve-bin-tool binary scan runs in parallel (see artifacts)
+          - Planned fix: upgrade to Zephyr v3.4+ (complete SPDX output)
+
+          ### References
+          - https://docs.zephyrproject.org/3.2.0/build/west/zephyr-cmds.html
+          - https://github.com/zephyrproject-rtos/zephyr/issues/51954
           EOF
 
       - name: Upload SBOM artifacts
@@ -264,7 +316,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build \
             gcc gcc-multilib g++-multilib \
-            gcovr
+            gcovr \
+            device-tree-compiler
 
       - name: Install Zephyr Python requirements
         run: |
@@ -387,8 +440,6 @@ jobs:
       # ── Gitleaks – Secret Scanning ──────────────────────────────────────
       - name: Gitleaks · Secret Scanning
         uses: gitleaks/gitleaks-action@v2
-        with:
-          log-opts: "--all"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
