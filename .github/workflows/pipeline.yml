@@ -171,13 +171,17 @@ jobs:
           restore-keys: cve-bin-tool-db-${{ runner.os }}-
 
       - name: cve-bin-tool · Binary CVE Scan
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: |
           pip install cve-bin-tool
 
           # Use JSON mirror — NVD API blocks GitHub Actions IPs (rate-limit / 403)
+          # OSV/REDHAT/PURL2CPE disabled — slow, not relevant for embedded C firmware
           cve-bin-tool \
             -n json-mirror \
+            --disable-data-source OSV \
+            --disable-data-source REDHAT \
+            --disable-data-source PURL2CPE \
             --format json \
             --output cve-report.json \
             --disable-version-check \
