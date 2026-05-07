@@ -1,0 +1,6 @@
+tests:
+  hello.test.sanity:
+    platform_allow: native_posix
+    tags: hello ci
+    integration_platforms:
+      - native_posix

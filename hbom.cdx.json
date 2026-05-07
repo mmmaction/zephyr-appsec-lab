@@ -1,0 +1,52 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "version": 1,
+  "serialNumber": "urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "metadata": {
+    "timestamp": "2026-05-07T00:00:00Z",
+    "tools": [
+      {
+        "vendor": "Noser Engineering",
+        "name": "manual",
+        "version": "1.0"
+      }
+    ],
+    "component": {
+      "type": "device",
+      "name": "zephyr-appsec-lab",
+      "version": "1.0.0",
+      "description": "Reference embedded firmware device for CI/CD security demonstration (Zephyr RTOS / nRF Connect SDK)"
+    }
+  },
+  "components": [
+    {
+      "type": "hardware",
+      "bom-ref": "nora-b106-1",
+      "manufacturer": "u-blox",
+      "name": "NORA-B106",
+      "version": "nRF5340",
+      "description": "u-blox NORA-B106 Bluetooth Low Energy module based on Nordic Semiconductor nRF5340 SoC (dual-core ARM Cortex-M33, 1 MB Flash application core)",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://www.u-blox.com/en/product/nora-b10-series"
+        }
+      ]
+    },
+    {
+      "type": "hardware",
+      "bom-ref": "stm32l051r8-1",
+      "manufacturer": "STMicroelectronics",
+      "name": "STM32L051R8",
+      "version": "STM32L051R8T6",
+      "description": "STMicroelectronics ultra-low-power 32-bit ARM Cortex-M0+ microcontroller, 64 KB Flash, 8 KB SRAM",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://www.st.com/en/microcontrollers-microprocessors/stm32l051r8.html"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# West manifest for zephyr-appsec-lab
+#
+# Option A: Plain Zephyr (no sdk-nrf).
+# The nRF5340DK board is fully supported in upstream Zephyr.
+# sdk-nrf is only needed for Nordic-specific features (BLE stack, modem, etc.)
+# which this AppSec demo does not use.
+#
+# SBOM-relevant software (pinned versions):
+#   - Zephyr RTOS  v3.2.0  (zephyrproject-rtos/zephyr)
+#
+# All west module SHAs are pinned via Zephyr's own manifest import.
+
+manifest:
+  version: "0.10"
+
+  remotes:
+    - name: zephyrproject
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject
+      revision: v3.2.0
+      import: true   # pulls all Zephyr modules automatically
+
+  self:
+    path: hello_app
