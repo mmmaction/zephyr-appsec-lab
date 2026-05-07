@@ -172,36 +172,21 @@ jobs:
 
       - name: cve-bin-tool · Binary CVE Scan
         timeout-minutes: 15
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           pip install cve-bin-tool
 
-          # Step 1: fetch DB only (result is cached in ~/.cache/cve-bin-tool)
-          if [ -n "$NVD_API_KEY" ]; then
-            echo "NVD_API_KEY is set — fetching via NVD API 2.0"
-            cve-bin-tool \
-              -n api2 \
-              --nvd-api-key "$NVD_API_KEY" \
-              --disable-version-check \
-              --update now \
-            || true
-          else
-            echo "::warning::NVD_API_KEY secret not set — skipping NVD DB fetch"
-          fi
-
-          # Step 2: scan offline using cached DB (fast, no network)
+          # Use JSON mirror — NVD API blocks GitHub Actions IPs (rate-limit / 403)
           cve-bin-tool \
+            -n json-mirror \
             --format json \
             --output cve-report.json \
-            --offline \
             --disable-version-check \
             build/nrf5340/zephyr/zephyr.elf \
           || true
 
-          # Ensure artifact exists even on timeout / DB fetch failure
+          # Ensure artifact exists even on scan failure
           if [ ! -f cve-report.json ]; then
-            echo '{"status":"incomplete","reason":"timeout or CVE DB fetch failed"}' \
+            echo '{"status":"incomplete","reason":"cve-bin-tool scan failed"}' \
               > cve-report.json
           fi
 
@@ -351,6 +336,7 @@ jobs:
             -T hello_app/tests \
             --coverage \
             --coverage-tool gcovr \
+            --coverage-basedir "$GITHUB_WORKSPACE" \
             -o twister-out \
             --inline-logs
 
