@@ -171,16 +171,27 @@ jobs:
           restore-keys: cve-bin-tool-db-${{ runner.os }}-
 
       - name: cve-bin-tool · Binary CVE Scan
-        timeout-minutes: 10
+        timeout-minutes: 15
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           pip install cve-bin-tool
+
+          echo "API Key set: ${{ secrets.NVD_API_KEY != '' }}"
+
+          # Step 1: fetch DB only (result is cached in ~/.cache/cve-bin-tool)
+          cve-bin-tool \
+            -n api2 \
+            ${NVD_API_KEY:+--nvd-api-key "$NVD_API_KEY"} \
+            --disable-version-check \
+            --update now \
+          || true
+
+          # Step 2: scan offline using cached DB (fast, no network)
           cve-bin-tool \
             --format json \
             --output cve-report.json \
-            -n api2 \
-            ${NVD_API_KEY:+--nvd-api-key "$NVD_API_KEY"} \
+            --offline \
             --disable-version-check \
             build/nrf5340/zephyr/zephyr.elf \
           || true
@@ -339,6 +350,13 @@ jobs:
             --coverage-tool gcovr \
             -o twister-out \
             --inline-logs
+
+          # Debug: check if .gcda files exist
+          echo "=== GCDA files ==="
+          find twister-out/ -name "*.gcda" | head -20
+
+          echo "=== Coverage XML ==="
+          head -5 twister-out/coverage.xml || echo "No coverage.xml found"
         env:
           ZEPHYR_TOOLCHAIN_VARIANT: host   # native_posix uses system GCC — no SDK needed
           ZEPHYR_BASE: ${{ github.workspace }}/zephyr
