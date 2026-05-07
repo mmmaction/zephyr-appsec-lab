@@ -177,15 +177,18 @@ jobs:
         run: |
           pip install cve-bin-tool
 
-          echo "API Key set: ${{ secrets.NVD_API_KEY != '' }}"
-
           # Step 1: fetch DB only (result is cached in ~/.cache/cve-bin-tool)
-          cve-bin-tool \
-            -n api2 \
-            ${NVD_API_KEY:+--nvd-api-key "$NVD_API_KEY"} \
-            --disable-version-check \
-            --update now \
-          || true
+          if [ -n "$NVD_API_KEY" ]; then
+            echo "NVD_API_KEY is set — fetching via NVD API 2.0"
+            cve-bin-tool \
+              -n api2 \
+              --nvd-api-key "$NVD_API_KEY" \
+              --disable-version-check \
+              --update now \
+            || true
+          else
+            echo "::warning::NVD_API_KEY secret not set — skipping NVD DB fetch"
+          fi
 
           # Step 2: scan offline using cached DB (fast, no network)
           cve-bin-tool \
