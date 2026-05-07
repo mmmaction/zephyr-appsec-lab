@@ -1,4 +1,4 @@
-#include "hello_app/src/app_logic.h"
+#include "app_logic.h"
 #include <version.h> /* KERNEL_VERSION_MAJOR, KERNEL_VERSION_MINOR, KERNEL_PATCHLEVEL */
 #include <zephyr/ztest.h>
 

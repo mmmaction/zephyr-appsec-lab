@@ -1,4 +1,4 @@
-#include "hello_app/src/app_logic.h"
+#include "app_logic.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 
