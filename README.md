@@ -33,7 +33,7 @@ The embedded counterpart to [mobile-appsec-lab](https://github.com/mmmaction/mob
 
 SBOM is generated automatically in the Build stage using **`west spdx`** (understands the Zephyr CMake/west build graph) and converted to CycloneDX JSON via **syft** for downstream tooling (DependencyTrack, Trivy).
 
-> **Known gap (Zephyr v3.2.x):** `west spdx` in v3.2.x captures file hashes only — no component names, no versions, no license metadata. CVE matching via SBOM is not possible. Documented in `sbom-gaps.md` (archived with each build). **Mitigation:** `cve-bin-tool` scans the compiled `zephyr.elf` binary directly. Upgrade to Zephyr v3.4+ for complete SPDX output.
+> **Known gap (Zephyr v3.2.x):** `west spdx` in v3.2.x captures file hashes only — no component names, no versions, no license metadata. CVE matching via SBOM is not possible. Documented in `sbom-gaps.md` (archived with each build). **Mitigation:** `grype` scans the compiled `zephyr.elf` binary directly. Upgrade to Zephyr v3.4+ for complete SPDX output.
 
 ### SBOM Tool Evaluation
 
@@ -42,7 +42,7 @@ SBOM is generated automatically in the Build stage using **`west spdx`** (unders
 | `trivy fs` | ❌ No | Empty SBOM | Does not understand west/CMake |
 | `west spdx` | ✅ Yes | SPDX 2.3 | **Primary** — walks actual build graph; incomplete in v3.2.x |
 | `syft convert` | ✅ (converter) | CycloneDX | Converts SPDX → CDX for downstream tools |
-| `cve-bin-tool` | ✅ Yes | JSON CVE report | **Mitigation** — binary scan, works regardless of SBOM quality |
+| `grype` | ✅ Yes | JSON CVE report | **Mitigation** — binary scan via Anchore CDN; reliable from GitHub Actions (see Tool Selection Notes) |
 
 ## Hardware Bill of Materials (HBOM)
 
@@ -62,7 +62,7 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 | Stage | What it does | Key tools |
 |---|---|---|
 | **Lint** | Code style & formatting check (fast-fail) | `cpplint`, `clang-format`, `cmake-format` |
-| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM + CVE scan | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX), `cve-bin-tool` |
+| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM + CVE scan | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX), `grype` |
 | **Unit Test** | Run tests on `native_posix` with coverage | Zephyr Twister, Ztest, `gcovr` |
 | **SAST / SCA** | Static analysis + vulnerability/license/secret scan | `cppcheck`, Trivy SCA (via SBOM), Gitleaks |
 | **Package** | Sign firmware, archive SBOM + HBOM | `imgtool` (MCUboot), GitHub Artifacts |
@@ -73,7 +73,7 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 Build stage
   └─ west spdx → SPDX 2.3           ← primary (understands Zephyr build graph)
   └─ syft convert → CycloneDX JSON  ← for DependencyTrack + Trivy downstream
-  └─ cve-bin-tool → cve-report.json  ← binary CVE scan (mitigation for v3.2.x SBOM gaps)
+  └─ grype → cve-report.json          ← binary CVE scan (mitigation for v3.2.x SBOM gaps)
   └─ sbom-gaps.md                   ← CRA Annex I gap documentation
         │
         ▼
@@ -87,6 +87,31 @@ Build stage
 ```
 
 > **Why not Trivy fs for SBOM generation?** Trivy does not understand west/CMake and produces empty results for C/Zephyr projects. `west spdx` is the correct tool — it walks the actual Zephyr build graph.
+
+---
+
+## Tool Selection Notes
+
+Obstacles encountered during pipeline development.
+
+### CVE scanning: cve-bin-tool → grype
+
+`cve-bin-tool` was the first choice for binary CVE scanning but hit two blocking issues on GitHub Actions:
+
+| Attempt | Problem |
+|---|---|
+| `cve-bin-tool` with NVD API 2.0 key | NVD API returns **HTTP 403** for GitHub Actions runner IPs — blocked at the network level regardless of key validity |
+| `cve-bin-tool -n json-mirror` | Downloads ~1 GB NVD JSON mirror on every run; OSV / REDHAT / PURL2CPE sources timed out (25+ min) even after disabling them individually |
+
+**Resolution:** Replaced with **grype** (Anchore). grype fetches its vulnerability DB from Anchore's CDN, which has no IP restrictions on GitHub Actions. It is also the natural companion to `syft` (already used for SPDX → CycloneDX conversion) — both tools share the same Anchore ecosystem.
+
+### Coverage reporting: gcovr auto-config
+
+`gcovr` auto-discovers a `gcovr.cfg` file in the repo root. The `[gcovr]` section header in that file is not supported by the gcovr version shipped with `ubuntu-22.04`, causing the coverage step to fail.
+
+**Resolution:** Deleted `gcovr.cfg` — all options are passed explicitly via CLI flags in the pipeline, making the config file redundant.
+
+---
 
 ### Pipeline Triggers
 

@@ -159,38 +159,24 @@ jobs:
         env:
           ZEPHYR_SDK_INSTALL_DIR: /opt/zephyr-sdk-${{ env.ZEPHYR_SDK_VERSION }}
 
-      - name: Get week number (cache key)
-        id: date
-        run: echo "week=$(date +'%Y-%U')" >> $GITHUB_OUTPUT
-
-      - name: Cache cve-bin-tool DB
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/cve-bin-tool
-          key: cve-bin-tool-db-${{ runner.os }}-${{ steps.date.outputs.week }}
-          restore-keys: cve-bin-tool-db-${{ runner.os }}-
-
-      - name: cve-bin-tool · Binary CVE Scan
-        timeout-minutes: 25
+      # grype: Anchore CDN works from GitHub Actions (NVD blocks Actions IPs)
+      - name: Install grype
         run: |
-          pip install cve-bin-tool
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
 
-          # Use JSON mirror — NVD API blocks GitHub Actions IPs (rate-limit / 403)
-          # OSV/REDHAT/PURL2CPE disabled — slow, not relevant for embedded C firmware
-          cve-bin-tool \
-            -n json-mirror \
-            --disable-data-source OSV \
-            --disable-data-source REDHAT \
-            --disable-data-source PURL2CPE \
-            --format json \
-            --output cve-report.json \
-            --disable-version-check \
-            build/nrf5340/zephyr/zephyr.elf \
+      - name: grype · Binary CVE Scan
+        run: |
+          grype \
+            file:build/nrf5340/zephyr/zephyr.elf \
+            --output json \
+            --file cve-report.json \
+            --fail-on critical \
           || true
 
           # Ensure artifact exists even on scan failure
           if [ ! -f cve-report.json ]; then
-            echo '{"status":"incomplete","reason":"cve-bin-tool scan failed"}' \
+            echo '{"status":"incomplete","reason":"grype scan failed"}' \
               > cve-report.json
           fi
 
