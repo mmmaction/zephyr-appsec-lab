@@ -171,13 +171,16 @@ jobs:
           restore-keys: cve-bin-tool-db-${{ runner.os }}-
 
       - name: cve-bin-tool · Binary CVE Scan
-        timeout-minutes: 8
+        timeout-minutes: 10
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           pip install cve-bin-tool
           cve-bin-tool \
             --format json \
             --output cve-report.json \
-            -n json-mirror \
+            -n api2 \
+            ${NVD_API_KEY:+--nvd-api-key "$NVD_API_KEY"} \
             --disable-version-check \
             build/nrf5340/zephyr/zephyr.elf \
           || true

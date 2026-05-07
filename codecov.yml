@@ -1,0 +1,10 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+ignore:
+  - "zephyr/**"
+  - "modules/**"
+  - "bootloader/**"
+  - "tools/**"
