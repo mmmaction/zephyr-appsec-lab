@@ -159,35 +159,6 @@ jobs:
         env:
           ZEPHYR_SDK_INSTALL_DIR: /opt/zephyr-sdk-${{ env.ZEPHYR_SDK_VERSION }}
 
-      # grype: Anchore CDN works from GitHub Actions (NVD blocks Actions IPs)
-      - name: Install grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin
-
-      - name: grype · Binary CVE Scan
-        run: |
-          grype \
-            file:build/nrf5340/zephyr/zephyr.elf \
-            --output json \
-            --file cve-report.json \
-            --fail-on critical \
-          || true
-
-          # Ensure artifact exists even on scan failure
-          if [ ! -f cve-report.json ]; then
-            echo '{"status":"incomplete","reason":"grype scan failed"}' \
-              > cve-report.json
-          fi
-
-      - name: Upload CVE report
-        uses: actions/upload-artifact@v7.0.1
-        if: always()
-        with:
-          name: cve-report
-          path: cve-report.json
-          retention-days: 90
-
       # Primary SBOM: west spdx — understands Zephyr build graph (CMake + west modules)
       # NOTE: v3.2.x incomplete on transitive west modules — gap documented below
       - name: Generate SBOM (west spdx → SPDX 2.3)
@@ -196,10 +167,12 @@ jobs:
           echo "=== Generated SPDX files ==="
           find spdx-out/ -type f -name "*.spdx"
 
-      # Install syft for SPDX → CycloneDX conversion
-      - name: Install syft
+      # Install syft + grype (both from Anchore CDN — works from GitHub Actions)
+      - name: Install syft + grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
             | sh -s -- -b /usr/local/bin
 
       # Convert SPDX → CycloneDX JSON (for DependencyTrack + Trivy vuln scan downstream)
@@ -220,6 +193,31 @@ jobs:
 
           echo "Converting: $SPDX_FILE"
           syft convert "$SPDX_FILE" -o cyclonedx-json=sbom.cdx.json
+
+      # grype scans the CycloneDX SBOM for known CVEs
+      # NOTE: results are limited in v3.2.x due to incomplete SBOM (file hashes only)
+      - name: grype · CVE Scan (via SBOM)
+        run: |
+          grype \
+            sbom:sbom.cdx.json \
+            --output json \
+            --file cve-report.json \
+            --fail-on critical \
+          || true
+
+          # Ensure artifact exists even on scan failure
+          if [ ! -f cve-report.json ]; then
+            echo '{"status":"incomplete","reason":"grype scan failed"}' \
+              > cve-report.json
+          fi
+
+      - name: Upload CVE report
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: cve-report
+          path: cve-report.json
+          retention-days: 90
 
       # Document known gaps for CRA Annex I compliance
       - name: Document SBOM gaps (west spdx v3.2.x)
@@ -257,7 +255,9 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: firmware
-          path: build/nrf5340/zephyr/zephyr.hex
+          path: |
+            build/nrf5340/zephyr/zephyr.hex
+            build/nrf5340/zephyr/zephyr.elf
           retention-days: 30
 
 # ─────────────────────────────────────────────────────────────────────────────

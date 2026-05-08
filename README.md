@@ -96,14 +96,29 @@ Obstacles encountered during pipeline development.
 
 ### CVE scanning: cve-bin-tool → grype
 
-`cve-bin-tool` was the first choice for binary CVE scanning but hit two blocking issues on GitHub Actions:
+**Key distinction:** `cve-bin-tool` and `grype` are fundamentally different tools:
+
+| Tool | Approach | Input |
+|---|---|---|
+| `cve-bin-tool` | Binary string matching — scans ELF byte strings for version markers | Raw binary (`.elf`, `.hex`) |
+| `grype` | SCA — matches component names/versions against CVE DB | SBOM (CycloneDX/SPDX) |
+
+`cve-bin-tool` is the **only tool that produces real CVE results** from the compiled binary in Zephyr v3.2.x — it does not depend on SBOM quality. However, it cannot run in CI:
 
 | Attempt | Problem |
 |---|---|
-| `cve-bin-tool` with NVD API 2.0 key | NVD API returns **HTTP 403** for GitHub Actions runner IPs — blocked at the network level regardless of key validity |
-| `cve-bin-tool -n json-mirror` | Downloads ~1 GB NVD JSON mirror on every run; OSV / REDHAT / PURL2CPE sources timed out (25+ min) even after disabling them individually |
+| `cve-bin-tool` with NVD API 2.0 key | NVD API returns **HTTP 403** for GitHub Actions runner IPs — blocked at network level regardless of key validity |
+| `cve-bin-tool -n json-mirror` | Downloads ~1 GB NVD JSON mirror; OSV source crashes with `FileNotFoundError: gsutil` (cve-bin-tool 3.4 bug on Python 3.14 — `--disable-data-source OSV` flag ignored) |
 
-**Resolution:** Replaced with **grype** (Anchore). grype fetches its vulnerability DB from Anchore's CDN, which has no IP restrictions on GitHub Actions. It is also the natural companion to `syft` (already used for SPDX → CycloneDX conversion) — both tools share the same Anchore ecosystem.
+**Local workaround:** Install `google-cloud-sdk` (provides `gsutil`) and run `cve-bin-tool` locally — works from developer IPs, NVD cache reused on subsequent runs:
+```bash
+brew install --cask google-cloud-sdk
+cve-bin-tool --disable-data-source REDHAT --disable-data-source PURL2CPE \
+  --format json --output cve-report.json path/to/zephyr.elf
+```
+Download `zephyr.elf` from the `firmware` CI artifact: `gh run download --repo mmmaction/zephyr-appsec-lab --name firmware -D firmware/`
+
+**CI resolution:** `grype` scans the CycloneDX SBOM and runs reliably from GitHub Actions (Anchore CDN, no IP restrictions). Due to the v3.2.x SBOM gap (file hashes only, no package names/versions), grype returns 0 matches — it is an **architectural placeholder** that becomes fully effective after upgrading to Zephyr v3.4+.
 
 ### Coverage reporting: gcovr auto-config
 
