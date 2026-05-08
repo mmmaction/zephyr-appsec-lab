@@ -24,6 +24,50 @@ The embedded counterpart to [mobile-appsec-lab](https://github.com/mmmaction/mob
 
 ---
 
+## Demo Findings
+
+This repo intentionally contains security findings to make the pipeline results visible and educational.
+
+### 1. Shell Injection – `${{ github.ref_name }}` in `run:` step (Semgrep)
+
+**File:** `.github/workflows/pipeline.yml` — `scan-deptrack` job
+
+The `scan-deptrack` job interpolates `${{ github.ref_name }}` directly into a `run:` shell script. A branch name containing shell metacharacters could execute arbitrary commands on the runner.
+
+**Detected by:** Semgrep rule `yaml.github-actions.security.run-shell-injection.run-shell-injection`  
+**Fix:** Move `github.ref_name` to an intermediate `env:` variable (`GIT_REF_NAME`) and reference `"${GIT_REF_NAME}"` in the script.
+
+This demonstrates:
+- That Semgrep catches GitHub Actions-specific injection patterns, not just application code
+- The correct mitigation pattern (env var indirection) for CI/CD shell injection
+
+### 2. C Memory Bugs – `demo_bugs.c` (cppcheck)
+
+**File:** `hello_app/src/demo_bugs.c`
+
+The file contains three classic C memory safety bugs that cppcheck reliably detects:
+
+| Finding | cppcheck rule | Description |
+|---|---|---|
+| Buffer overrun | `bufferAccessOutOfBounds` | Loop writes to `buf[8]` on an 8-byte array (off-by-one) |
+| Null pointer deref | `nullPointerDereference` | `malloc()` return value used without NULL check |
+| Memory leak | `memleak` | Heap allocation never freed |
+
+**This file is not compiled into the firmware** — it is excluded from `CMakeLists.txt` and exists solely so cppcheck has something to report.
+
+**Detected by:** cppcheck (`--enable=all`)  
+**Fix:** bound the loop to `i < 8`; check `ptr != NULL`; call `free(ptr)`.
+
+This demonstrates:
+- cppcheck catches real memory safety classes (OOB write, UB, leak) that compilers often miss
+- The tool is actively scanning, not silently passing
+
+### 3. Known CVEs – Zephyr 3.2.0 (grype / Dependency-Track)
+
+See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-320-manual-sbom) below. 54 CVEs intentionally present via the pinned Zephyr 3.2.0 version.
+
+---
+
 ## Software Bill of Materials (SBOM)
 
 | Component | Version | SBOM-relevant |
