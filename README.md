@@ -47,16 +47,15 @@ This demonstrates:
 
 The file contains three classic C memory safety bugs that cppcheck reliably detects:
 
-| Finding | cppcheck rule | Description |
-|---|---|---|
-| Buffer overrun | `bufferAccessOutOfBounds` | Loop writes to `buf[8]` on an 8-byte array (off-by-one) |
-| Null pointer deref | `nullPointerDereference` | `malloc()` return value used without NULL check |
-| Memory leak | `memleak` | Heap allocation never freed |
+| Finding | cppcheck rule | CWE | Description |
+|---|---|---|---|
+| Buffer overrun | `arrayIndexOutOfBounds` | CWE-788 | Loop writes to `buf[8]` on an 8-byte array (off-by-one) |
+| Memory leak | `memleak` | CWE-401 | Heap allocation from `malloc()` never freed |
 
 **This file is not compiled into the firmware** — it is excluded from `CMakeLists.txt` and exists solely so cppcheck has something to report.
 
 **Detected by:** cppcheck (`--enable=all`)  
-**Fix:** bound the loop to `i < 8`; check `ptr != NULL`; call `free(ptr)`.
+**Fix:** bound the loop to `i < 8`; call `free(ptr)` before returning.
 
 This demonstrates:
 - cppcheck catches real memory safety classes (OOB write, UB, leak) that compilers often miss
