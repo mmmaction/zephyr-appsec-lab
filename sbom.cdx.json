@@ -1,0 +1,94 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:b3f7a2d1-c4e8-4f92-bd13-9a2c7e510d44",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-05-07T21:00:00Z",
+    "tools": [
+      {
+        "vendor": "manual",
+        "name": "zephyr-sbom-manual",
+        "version": "1.0.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "helloApp-firmware",
+      "name": "HMI IO Firmware",
+      "version": "1.0.0",
+      "description": "HMI and IO module firmware for u-blox NORA-B106 (nRF5340)",
+      "supplier": { "name": "customer" }
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "zephyr-rtos",
+      "name": "zephyr",
+      "version": "3.2.0",
+      "description": "Zephyr Real-Time Operating System",
+      "supplier": { "name": "zephyrproject-rtos" },
+      "purl": "pkg:generic/zephyr@3.2.0",
+      "cpe": "cpe:2.3:o:zephyrproject:zephyr:3.2.0:*:*:*:*:*:*:*",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/zephyrproject-rtos/zephyr/tree/v3.2.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "nrf-connect-sdk",
+      "name": "sdk-nrf",
+      "version": "2.2.0",
+      "description": "nRF Connect SDK — Nordic Semiconductor Zephyr-based SDK",
+      "supplier": { "name": "Nordic Semiconductor" },
+      "purl": "pkg:generic/sdk-nrf@2.2.0",
+      "cpe": "cpe:2.3:a:nordicsemi:nrf_connect_sdk:2.2.0:*:*:*:*:*:*:*",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/nrfconnect/sdk-nrf/tree/v2.2.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "protobuf",
+      "name": "protobuf",
+      "version": "22.0",
+      "description": "Google Protocol Buffers serialization library",
+      "supplier": { "name": "Google" },
+      "purl": "pkg:generic/protobuf@22.0",
+      "cpe": "cpe:2.3:a:google:protobuf:22.0:*:*:*:*:*:*:*",
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/protocolbuffers/protobuf/releases/tag/v22.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "zephyr-sdk",
+      "name": "zephyr-sdk",
+      "version": "0.15.1",
+      "description": "Zephyr SDK — ARM GCC toolchain and build tools",
+      "supplier": { "name": "zephyrproject-rtos" },
+      "purl": "pkg:generic/zephyr-sdk@0.15.1",
+      "cpe": "cpe:2.3:a:zephyrproject:zephyr_sdk:0.15.1:*:*:*:*:*:*:*",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/zephyrproject-rtos/sdk-ng/releases/tag/v0.15.1"
+        }
+      ]
+    }
+  ]
+}

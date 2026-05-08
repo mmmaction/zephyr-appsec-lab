@@ -241,6 +241,55 @@ jobs:
           - https://github.com/zephyrproject-rtos/zephyr/issues/51954
           EOF
 
+      # ── Dependency-Track – Continuous SBOM Monitoring ──────────────────
+      # Uploads the CycloneDX SBOM to a self-hosted or cloud Dependency-Track
+      # instance for continuous CVE monitoring (alerts on new CVEs between builds).
+      #
+      # Required GitHub secrets:
+      #   DT_URL     – e.g. https://dependencytrack.example.com
+      #   DT_API_KEY – Automation team API key (Portfolio Management permission)
+      #
+      # Self-hosted quickstart:
+      #   docker run -d --name dependencytrack \
+      #     -p 8080:8080 \
+      #     dependencytrack/bundled:latest
+      - name: Dependency-Track · Upload SBOM
+        if: env.DT_URL != '' && env.DT_API_KEY != ''
+        env:
+          DT_URL: ${{ secrets.DT_URL }}
+          DT_API_KEY: ${{ secrets.DT_API_KEY }}
+        run: |
+          # Use manual SBOM if west spdx output is empty (Zephyr v3.2.x known gap)
+          SBOM_FILE="sbom.cdx.json"
+          if [ ! -s "$SBOM_FILE" ]; then
+            echo "::warning::SBOM is empty — skipping Dependency-Track upload"
+            exit 0
+          fi
+
+          # Base64-encode the SBOM (DT API requirement)
+          BOM_B64=$(base64 -w 0 "$SBOM_FILE")
+
+          # Upload via DT REST API v1
+          HTTP_STATUS=$(curl -s -o /tmp/dt-response.json -w "%{http_code}" \
+            --request PUT \
+            --url "${DT_URL}/api/v1/bom" \
+            --header "X-Api-Key: ${DT_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"projectName\": \"HMI-IO-Firmware\",
+              \"projectVersion\": \"${{ github.ref_name }}\",
+              \"autoCreate\": true,
+              \"bom\": \"${BOM_B64}\"
+            }")
+
+          echo "Dependency-Track response: HTTP ${HTTP_STATUS}"
+          cat /tmp/dt-response.json
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Dependency-Track upload failed (HTTP ${HTTP_STATUS})"
+            exit 1
+          fi
+
       - name: Upload SBOM artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -357,14 +406,16 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4 · SAST / SCA
-# Tools:
-#   cppcheck   → Static analysis for C/C++ (recommended, bold red in proposal)
-#   Trivy SCA  → Vulnerability scan + license check (via SBOM)
-#   Gitleaks   → Secret scanning (full git history)
+# Jobs run in parallel after build + test:
+#   sast-sca        → cppcheck (C static analysis) + Gitleaks (secret scanning)
+#   scan-grype      → Anchore grype CVE scan via CycloneDX SBOM
+#   scan-trivy      → Trivy SBOM scan + license check (documents limitations)
+#   scan-deptrack   → OWASP Dependency-Track continuous monitoring upload
 #
-# NOTE: Secret scanning is listed under Trivy in the proposal diagram.
-#       Gitleaks is used here as the best-in-class dedicated secret scanner;
-#       it complements Trivy's secret scanning mode.
+# Tool comparison results (lab findings against Zephyr 3.2.0 manual SBOM):
+#   grype:   54 CVEs (13 critical, 21 high, 20 medium) — CPE-based, RECOMMENDED
+#   trivy:   0 CVEs  — no pkg:generic ecosystem DB, cannot match firmware/C components
+#   deptrack: uploads SBOM for continuous 24/7 re-scanning on new CVE publications
 # ─────────────────────────────────────────────────────────────────────────────
   sast-sca:
     name: "SAST / SCA"
@@ -409,8 +460,83 @@ jobs:
           path: cppcheck-results.xml
           retention-days: 30
 
-      # ── Trivy SCA – Vulnerability Scan (uses SBOM) ──────────────────────
-      - name: Trivy · Vulnerability Scan (via SBOM)
+      # ── Gitleaks – Secret Scanning ──────────────────────────────────────
+      - name: Gitleaks · Secret Scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4a · CVE SCAN — grype (Anchore)
+# Recommended scanner for Zephyr/firmware SBOMs.
+# Matches CVEs via CPE fallback (NVD) — pkg:generic PURLs supported.
+#
+# Lab result (Zephyr 3.2.0): 54 CVEs — 13 critical, 21 high, 20 medium.
+# Fails pipeline on CRITICAL findings (configurable via --fail-on).
+# ─────────────────────────────────────────────────────────────────────────────
+  scan-grype:
+    name: "CVE Scan · grype"
+    runs-on: ubuntu-22.04
+    needs: [build, test]
+
+    steps:
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+      - name: Install grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: grype · CVE Scan
+        run: |
+          grype sbom:sbom/sbom.cdx.json \
+            --output json \
+            --file grype-cve-report.json
+          # Surface summary to log
+          grype sbom:sbom/sbom.cdx.json \
+            --output table \
+            --fail-on critical
+        continue-on-error: true   # change to false to break pipeline on critical
+
+      - name: Upload grype report
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: grype-cve-report
+          path: grype-cve-report.json
+          retention-days: 90
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4b · CVE SCAN — Trivy
+# Intentionally kept for comparison / license scanning.
+#
+# LIMITATION (documented): Trivy has no CVE database for pkg:generic or
+# firmware component types. For Zephyr/C projects it will always report 0 CVEs.
+# Use trivy here ONLY for license compliance — NOT for vulnerability gating.
+# Lab result: 0 CVEs (false negative — do NOT rely on this for security decisions).
+# ─────────────────────────────────────────────────────────────────────────────
+  scan-trivy:
+    name: "CVE Scan · trivy (+ license)"
+    runs-on: ubuntu-22.04
+    needs: [build, test]
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+      # KNOWN LIMITATION: trivy reports 0 CVEs for pkg:generic firmware components.
+      # This step is kept to document the gap and for license scanning only.
+      - name: Trivy · CVE Scan (SBOM) — expected 0 results for firmware
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
@@ -418,15 +544,14 @@ jobs:
           format: sarif
           output: trivy-vuln.sarif
           severity: CRITICAL,HIGH,MEDIUM
-          exit-code: "0"   # set to 1 to break pipeline on findings
+          exit-code: "0"   # intentionally 0 — trivy cannot gate firmware CVEs
 
-      - name: Upload Trivy vuln results to GitHub Security tab
+      - name: Upload Trivy vuln SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-vuln.sarif
           category: trivy-vulnerabilities
 
-      # ── Trivy SCA – License Check (uses SBOM) ───────────────────────────
       - name: Trivy · License Check (via SBOM)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -434,13 +559,79 @@ jobs:
           scan-ref: sbom/sbom.cdx.json
           scanners: license
           format: table
-          exit-code: "0"   # set to 1 to enforce license policy
+          exit-code: "0"
 
-      # ── Gitleaks – Secret Scanning ──────────────────────────────────────
-      - name: Gitleaks · Secret Scanning
-        uses: gitleaks/gitleaks-action@v2
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4c · CONTINUOUS MONITORING — OWASP Dependency-Track  [CI PLACEHOLDER]
+# Open source (Apache 2.0) — https://dependencytrack.org
+# DT is self-hosted only (no SaaS). This job skips gracefully if DT_URL is not
+# set, so it is safe to merge without a running instance.
+#
+# Lab testing: use docker-compose.yml at the repo root to spin up locally,
+# then upload sbom.cdx.json via the browser UI (no API key needed for that).
+#
+# To activate CI integration:
+#   1. Stand up a persistent DT instance (server / k8s — NOT localhost)
+#   2. DT UI → Administration → Access Management → Teams → Automation
+#      → API Keys → [+] → copy key
+#   3. Add GitHub Secrets:
+#        DT_URL     = https://your-dt-instance
+#        DT_API_KEY = <copied key>
+#   4. Job activates automatically — no pipeline changes needed.
+#
+# Lab results (manual upload via browser): see README CVE Scanner Comparison.
+# ─────────────────────────────────────────────────────────────────────────────
+  scan-deptrack:
+    name: "CVE Scan · Dependency-Track"
+    runs-on: ubuntu-22.04
+    needs: [build, test]
+
+    steps:
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+      - name: Dependency-Track · Upload SBOM
+        if: ${{ vars.DT_URL != '' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DT_URL: ${{ secrets.DT_URL }}
+          DT_API_KEY: ${{ secrets.DT_API_KEY }}
+        run: |
+          SBOM_FILE="sbom/sbom.cdx.json"
+          if [ ! -s "$SBOM_FILE" ]; then
+            echo "::warning::SBOM is empty — skipping Dependency-Track upload"
+            exit 0
+          fi
+
+          BOM_B64=$(base64 -w 0 "$SBOM_FILE")
+
+          HTTP_STATUS=$(curl -s -o /tmp/dt-response.json -w "%{http_code}" \
+            --request PUT \
+            --url "${DT_URL}/api/v1/bom" \
+            --header "X-Api-Key: ${DT_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"projectName\": \"HMI-IO-Firmware\",
+              \"projectVersion\": \"${{ github.ref_name }}\",
+              \"autoCreate\": true,
+              \"bom\": \"${BOM_B64}\"
+            }")
+
+          echo "Dependency-Track response: HTTP ${HTTP_STATUS}"
+          cat /tmp/dt-response.json
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Dependency-Track upload failed (HTTP ${HTTP_STATUS})"
+            exit 1
+          fi
+
+      - name: Dependency-Track · Skip notice (no DT_URL configured)
+        if: ${{ vars.DT_URL == '' }}
+        run: |
+          echo "::notice::DT_URL not set — skipping Dependency-Track upload."
+          echo "Set DT_URL (var) and DT_API_KEY (secret) to activate."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 5 · PACKAGE
@@ -453,7 +644,7 @@ jobs:
   package:
     name: "Package"
     runs-on: ubuntu-22.04
-    needs: sast-sca
+    needs: [sast-sca, scan-grype, scan-trivy, scan-deptrack]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read

@@ -1,0 +1,44 @@
+# OWASP Dependency-Track — local lab instance
+#
+# Usage:
+#   docker compose up -d
+#   open http://localhost:8081        # frontend UI
+#   Login: admin / admin  (change on first login)
+#
+# Upload SBOM:
+#   1. Create a project
+#   2. Drag-and-drop sbom.cdx.json onto the project SBOM tab
+#   3. Wait for analysis then check Vulnerabilities tab
+#
+# Teardown (keeps volumes):  docker compose stop
+# Teardown (wipe data):      docker compose down -v
+
+services:
+  dtrack-apiserver:
+    image: dependencytrack/apiserver:latest
+    environment:
+      - ALPINE_DATABASE_MODE=internal
+    volumes:
+      - dtrack-data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  dtrack-frontend:
+    image: dependencytrack/frontend:latest
+    environment:
+      - API_BASE_URL=http://localhost:8080
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    depends_on:
+      - dtrack-apiserver  # frontend retries automatically; no blocking healthcheck wait
+
+volumes:
+  dtrack-data:

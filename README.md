@@ -62,9 +62,12 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 | Stage | What it does | Key tools |
 |---|---|---|
 | **Lint** | Code style & formatting check (fast-fail) | `cpplint`, `clang-format`, `cmake-format` |
-| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM + CVE scan | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX), `grype` |
+| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX) |
 | **Unit Test** | Run tests on `native_posix` with coverage | Zephyr Twister, Ztest, `gcovr` |
-| **SAST / SCA** | Static analysis + vulnerability/license/secret scan | `cppcheck`, Trivy SCA (via SBOM), Gitleaks |
+| **SAST / SCA** | Static analysis + secret scanning | `cppcheck`, Gitleaks |
+| **CVE Scan · grype** | CVE scan via SBOM — **primary scanner** | Anchore `grype` (CPE/NVD) |
+| **CVE Scan · trivy** | CVE scan via SBOM + license check — documents limitations | `trivy sbom` |
+| **CVE Scan · Dependency-Track** | Upload SBOM for continuous 24/7 re-scanning | OWASP Dependency-Track (local: `docker-compose.yml`) |
 | **Package** | Sign firmware, archive SBOM + HBOM | `imgtool` (MCUboot), GitHub Artifacts |
 
 ### SBOM Flow
@@ -72,19 +75,49 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 ```
 Build stage
   └─ west spdx → SPDX 2.3           ← primary (understands Zephyr build graph)
-  └─ syft convert → CycloneDX JSON  ← for DependencyTrack + Trivy downstream
-  └─ grype → cve-report.json          ← binary CVE scan (mitigation for v3.2.x SBOM gaps)
+  └─ syft convert → CycloneDX JSON  ← for downstream CVE scanner consumption
   └─ sbom-gaps.md                   ← CRA Annex I gap documentation
         │
-        ▼
-  SAST/SCA stage consumes CycloneDX SBOM
-    ├─ Trivy: vulnerability scan (SARIF → Security tab)
-    ├─ Trivy: license compliance check
-    └─ Gitleaks: secret scanning (full git history)
+        ▼  (all 3 run in parallel after build + test)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  scan-grype       grype sbom:sbom.cdx.json                  │
+  │  scan-trivy       trivy sbom sbom.cdx.json + license check  │
+  │  scan-deptrack    DT API v1 PUT /bom upload                  │
+  └─────────────────────────────────────────────────────────────┘
         │
         ▼
-  Package stage archives SBOM (SPDX + CycloneDX) + HBOM alongside signed firmware
+  Package stage archives SBOM + HBOM alongside signed firmware
 ```
+
+### CVE Scanner Comparison (lab results — Zephyr 3.2.0 manual SBOM)
+
+Manual SBOM [`sbom.cdx.json`](sbom.cdx.json) uses `pkg:generic` PURLs and CPEs to maximise scanner compatibility.
+
+> **Scan date: 2026-05-08.** CVE counts reflect the vulnerability databases at that date. Counts will increase over time as new CVEs are published — re-run `grype sbom:sbom.cdx.json` or refresh the Dependency-Track project to get current numbers.
+
+| Tool | CVEs found | Critical | High | Medium | Notes |
+|---|---|---|---|---|---|
+| **grype** | **54** | **13** | **21** | **20** | CPE/NVD matching. **Recommended for CI/CD gate.** |
+| **trivy** | 0 | — | — | — | ❌ No database for `pkg:generic` / firmware. Use for license check only. |
+| **Dependency-Track** | **55** | **13** | **22** | **20** | NVD + OSS Index + GitHub Advisories. +1 High vs grype. **Recommended for continuous monitoring.** |
+
+**Key finding:** Trivy is an excellent scanner for container/OS/language ecosystems (npm, pip, Alpine, etc.) but **cannot match CVEs for firmware components** — it has no ecosystem DB for `pkg:generic`. It will always report 0 CVEs for Zephyr projects. Do **not** use trivy as a security gate for embedded firmware.
+
+**Dependency-Track** is fully open source (OWASP, Apache 2.0). It queries NVD, OSS Index, and GitHub Advisory Database — which is why it found **55 CVEs (13C/22H/20M)**, one more High than grype's NVD-only scan. The key advantage is continuous re-scanning: if a new CVE is published tomorrow for Zephyr 3.2.0, DT alerts without needing a new build. Activate CI integration by adding `DT_URL` + `DT_API_KEY` secrets (see `docker-compose.yml` for local setup).
+
+#### Notable grype findings (Zephyr 3.2.0)
+
+| CVE | Severity | Fixed in | Description |
+|---|---|---|---|
+| CVE-2023-5055 | Critical | — | Zephyr Bluetooth stack buffer overflow |
+| CVE-2023-3725 | Critical | — | Zephyr Bluetooth HCI buffer overflow |
+| CVE-2023-6249 | Critical | 3.5.0 | Zephyr memory corruption |
+| CVE-2023-4260 | Critical | — | Zephyr POSIX buffer overflow |
+| CVE-2025-1675 | Critical | — | Zephyr network stack vulnerability |
+| CVE-2023-7060 | High | 3.6.0 | Zephyr net/ipv6 OOB write |
+| CVE-2023-4258 | Medium | 3.4.0 | Zephyr Bluetooth MESH |
+
+> **Action required:** Upgrade to Zephyr ≥ 3.6.0 to resolve all CVEs with known fixes (CVE-2023-7060, CVE-2023-6249, CVE-2023-4258, CVE-2024-5754, CVE-2024-4785, CVE-2024-6258).
 
 > **Why not Trivy fs for SBOM generation?** Trivy does not understand west/CMake and produces empty results for C/Zephyr projects. `west spdx` is the correct tool — it walks the actual Zephyr build graph.
 
@@ -94,14 +127,14 @@ Build stage
 
 Obstacles encountered during pipeline development.
 
-### CVE scanning: cve-bin-tool → grype
+### CVE scanning: cve-bin-tool → grype (manual SBOM + pkg:generic)
 
 **Key distinction:** `cve-bin-tool` and `grype` are fundamentally different tools:
 
 | Tool | Approach | Input |
 |---|---|---|
 | `cve-bin-tool` | Binary string matching — scans ELF byte strings for version markers | Raw binary (`.elf`, `.hex`) |
-| `grype` | SCA — matches component names/versions against CVE DB | SBOM (CycloneDX/SPDX) |
+| `grype` | SCA — matches component names/versions against CVE DB via CPE | SBOM (CycloneDX/SPDX) |
 
 `cve-bin-tool` is the **only tool that produces real CVE results** from the compiled binary in Zephyr v3.2.x — it does not depend on SBOM quality. However, it cannot run in CI:
 
@@ -110,7 +143,7 @@ Obstacles encountered during pipeline development.
 | `cve-bin-tool` with NVD API 2.0 key | NVD API returns **HTTP 403** for GitHub Actions runner IPs — blocked at network level regardless of key validity |
 | `cve-bin-tool -n json-mirror` | Downloads ~1 GB NVD JSON mirror; OSV source crashes with `FileNotFoundError: gsutil` (cve-bin-tool 3.4 bug on Python 3.14 — `--disable-data-source OSV` flag ignored) |
 
-**Local workaround:** Install `google-cloud-sdk` (provides `gsutil`) and run `cve-bin-tool` locally — works from developer IPs, NVD cache reused on subsequent runs:
+**Local workaround:** Install `google-cloud-sdk` (provides `gsutil`) and run `cve-bin-tool` locally:
 ```bash
 brew install --cask google-cloud-sdk
 cve-bin-tool --disable-data-source REDHAT --disable-data-source PURL2CPE \
@@ -118,7 +151,13 @@ cve-bin-tool --disable-data-source REDHAT --disable-data-source PURL2CPE \
 ```
 Download `zephyr.elf` from the `firmware` CI artifact: `gh run download --repo mmmaction/zephyr-appsec-lab --name firmware -D firmware/`
 
-**CI resolution:** `grype` scans the CycloneDX SBOM and runs reliably from GitHub Actions (Anchore CDN, no IP restrictions). Due to the v3.2.x SBOM gap (file hashes only, no package names/versions), grype returns 0 matches — it is an **architectural placeholder** that becomes fully effective after upgrading to Zephyr v3.4+.
+**CI resolution:** `grype` scans the manual [`sbom.cdx.json`](sbom.cdx.json) using `pkg:generic` PURLs and CPE entries. With CPE matching enabled grype resolves CVEs via NVD and found **54 CVEs** (13 critical) for Zephyr 3.2.0 — making it the **primary CVE gate** in CI. The auto-generated SBOM from `west spdx` v3.2.x (file hashes only) remains the authoritative SBOM for CRA Annex I; the manual SBOM bridges the gap for scanning until Zephyr v3.4+ is adopted.
+
+### Trivy: CVE scanning limitation for firmware
+
+Trivy is kept in the pipeline for **license compliance only**. It has no CVE database for `pkg:generic` ecosystem components and will always return 0 CVEs for firmware/C projects. This is intentional and documented — the `scan-trivy` job has `exit-code: 0` and explicit comments explaining it cannot be used as a security gate for embedded firmware.
+
+**Lab validation result:** `trivy sbom sbom.cdx.json` → 0 CVEs (confirmed false negative against same SBOM where grype finds 54 CVEs).
 
 ### Coverage reporting: gcovr auto-config
 
