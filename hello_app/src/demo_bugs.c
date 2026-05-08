@@ -25,7 +25,7 @@ void demo_buffer_overrun(void)
 {
 	char buf[8];
 
-	for (int i = 0; i <= 8; i++) {   /* off-by-one: writes buf[8] */
+	for (int i = 0; i <= 8; i++) { /* off-by-one: writes buf[8] */
 		buf[i] = (char)i;
 	}
 
