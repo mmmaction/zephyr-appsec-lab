@@ -407,18 +407,23 @@ jobs:
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4 · SAST / SCA
 # Jobs run in parallel after build + test:
-#   sast-sca        → cppcheck (C static analysis) + Gitleaks (secret scanning)
+#   sast-cppcheck   → cppcheck (C semantic analysis) + Gitleaks (secret scanning)
+#   sast-semgrep    → Semgrep pattern-based SAST (C security anti-patterns)
 #   scan-grype      → Anchore grype CVE scan via CycloneDX SBOM
 #   scan-trivy      → Trivy SBOM scan + license check (documents limitations)
 #   scan-deptrack   → OWASP Dependency-Track continuous monitoring upload
 #
-# Tool comparison results (lab findings against Zephyr 3.2.0 manual SBOM):
+# SAST comparison results (lab findings — hello_app demo code):
+#   cppcheck: 0 warnings — demo code is minimal; add real C logic to see findings
+#   Semgrep:  0 findings — no C security patterns triggered in demo code
+#
+# CVE scan comparison results (lab findings against Zephyr 3.2.0 manual SBOM):
 #   grype:   54 CVEs (13 critical, 21 high, 20 medium) — CPE-based, RECOMMENDED
 #   trivy:   0 CVEs  — no pkg:generic ecosystem DB, cannot match firmware/C components
 #   deptrack: uploads SBOM for continuous 24/7 re-scanning on new CVE publications
 # ─────────────────────────────────────────────────────────────────────────────
-  sast-sca:
-    name: "SAST / SCA"
+  sast-cppcheck:
+    name: "SAST · cppcheck"
     runs-on: ubuntu-22.04
     needs: [build, test]
     permissions:
@@ -430,12 +435,6 @@ jobs:
         uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0   # full history needed for Gitleaks
-
-      - name: Download SBOM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sbom
-          path: sbom/
 
       # ── cppcheck – Static Analysis ──────────────────────────────────────
       - name: Install cppcheck
@@ -465,6 +464,34 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SAST — Semgrep (C)
+# Pattern-based security analysis for C. Complements cppcheck:
+#   cppcheck = deep semantic analysis (null deref, buffer OOB, UB, memory leaks)
+#   Semgrep  = security anti-pattern matching (format strings, dangerous functions,
+#              injection patterns, insecure API usage)
+# Both run in parallel. continue-on-error — neither blocks pipeline by default.
+# Lab result: 0 findings in hello_app demo code (expected for minimal project).
+# ─────────────────────────────────────────────────────────────────────────────
+  sast-semgrep:
+    name: "SAST · Semgrep (C)"
+    runs-on: ubuntu-22.04
+    needs: [build, test]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      # Pattern-based SAST for C — security rules via config:auto (includes p/c ruleset)
+      # Set SEMGREP_APP_TOKEN secret to send results to Semgrep dashboard.
+      - name: Semgrep SAST
+        uses: semgrep/semgrep-action@v1
+        continue-on-error: true   # does not block pipeline
+        with:
+          config: auto
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN || '' }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4a · CVE SCAN — grype (Anchore)
@@ -644,7 +671,7 @@ jobs:
   package:
     name: "Package"
     runs-on: ubuntu-22.04
-    needs: [sast-sca, scan-grype, scan-trivy, scan-deptrack]
+    needs: [sast-cppcheck, sast-semgrep, scan-grype, scan-trivy, scan-deptrack]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read

@@ -64,7 +64,8 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 | **Lint** | Code style & formatting check (fast-fail) | `cpplint`, `clang-format`, `cmake-format` |
 | **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX) |
 | **Unit Test** | Run tests on `native_posix` with coverage | Zephyr Twister, Ztest, `gcovr` |
-| **SAST / SCA** | Static analysis + secret scanning | `cppcheck`, Gitleaks |
+| **SAST · cppcheck** | Semantic C analysis — null deref, buffer OOB, UB, memory leaks | `cppcheck` + Gitleaks |
+| **SAST · Semgrep** | Pattern-based security analysis — C security anti-patterns | Semgrep (`config: auto`) |
 | **CVE Scan · grype** | CVE scan via SBOM — **primary scanner** | Anchore `grype` (CPE/NVD) |
 | **CVE Scan · trivy** | CVE scan via SBOM + license check — documents limitations | `trivy sbom` |
 | **CVE Scan · Dependency-Track** | Upload SBOM for continuous 24/7 re-scanning | OWASP Dependency-Track (local: `docker-compose.yml`) |
@@ -78,16 +79,38 @@ Build stage
   └─ syft convert → CycloneDX JSON  ← for downstream CVE scanner consumption
   └─ sbom-gaps.md                   ← CRA Annex I gap documentation
         │
-        ▼  (all 3 run in parallel after build + test)
-  ┌─────────────────────────────────────────────────────────────┐
-  │  scan-grype       grype sbom:sbom.cdx.json                  │
-  │  scan-trivy       trivy sbom sbom.cdx.json + license check  │
-  │  scan-deptrack    DT API v1 PUT /bom upload                  │
-  └─────────────────────────────────────────────────────────────┘
+        ▼  (all 5 run in parallel after build + test)
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  sast-cppcheck   cppcheck (C semantic) + Gitleaks (secrets)              │
+  │  sast-semgrep    Semgrep pattern-based SAST (C rules)                    │
+  │  scan-grype      grype sbom:sbom.cdx.json                                │
+  │  scan-trivy      trivy sbom sbom.cdx.json + license check                │
+  │  scan-deptrack   DT API v1 PUT /bom upload                               │
+  └─────────────────────────────────────────────────────────────────────────────┘
         │
         ▼
   Package stage archives SBOM + HBOM alongside signed firmware
 ```
+
+### Pipeline Triggers
+
+| Trigger | When |
+|---|---|
+| Push | Every push to `main` |
+| Pull Request | Every PR targeting `main` |
+| Schedule | Weekly Monday 07:00 UTC (Trivy vuln DB refresh) |
+| Manual | `workflow_dispatch` |
+
+### SAST Comparison (lab results — Zephyr 3.2.0 hello_app)
+
+> **Scan date: 2026-05-08.** Findings reflect the demo hello_app C source (`src/`). Real-world firmware with complex state machines, network stacks, or crypto will produce more findings.
+
+| Tool | Findings | Type | Notes |
+|---|---|---|---|
+| **cppcheck** | **0** | Semantic SAST | Deep C/C++ analysis — null deref, buffer OOB, undefined behaviour, memory leaks. **Primary C static analysis tool.** 0 findings expected in minimal demo code. |
+| **Semgrep** | **0** | Pattern SAST | `config: auto` includes the C ruleset (`p/c`) — format string bugs, dangerous function use, injection patterns. Complements cppcheck. `continue-on-error`. |
+
+**Key finding:** 0 findings is expected for the minimal demo code. Both tools are complementary — cppcheck understands C memory semantics deeply; Semgrep catches known-bad API usage patterns quickly. CodeQL (C/C++) would be the next upgrade but requires compiler instrumentation compatible with Zephyr's west build system.
 
 ### CVE Scanner Comparison (lab results — Zephyr 3.2.0 manual SBOM)
 
@@ -164,17 +187,6 @@ Trivy is kept in the pipeline for **license compliance only**. It has no CVE dat
 `gcovr` auto-discovers a `gcovr.cfg` file in the repo root. The `[gcovr]` section header in that file is not supported by the gcovr version shipped with `ubuntu-22.04`, causing the coverage step to fail.
 
 **Resolution:** Deleted `gcovr.cfg` — all options are passed explicitly via CLI flags in the pipeline, making the config file redundant.
-
----
-
-### Pipeline Triggers
-
-| Trigger | When |
-|---|---|
-| Push | Every push to `main` |
-| Pull Request | Every PR targeting `main` |
-| Schedule | Weekly Monday 07:00 UTC (Trivy vuln DB refresh) |
-| Manual | `workflow_dispatch` |
 
 ---
 
