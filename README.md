@@ -74,18 +74,19 @@ See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-320-man
 | Zephyr RTOS | v3.2.0 | ✅ |
 | Zephyr SDK (ARM toolchain) | v0.15.1 | ✅ |
 
-SBOM is generated automatically in the Build stage using **`west spdx`** (understands the Zephyr CMake/west build graph) and converted to CycloneDX JSON via **syft** for downstream tooling (DependencyTrack, Trivy).
-
-> **Known gap (Zephyr v3.2.x):** `west spdx` in v3.2.x captures file hashes only — no component names, no versions, no license metadata. CVE matching via SBOM is not possible. Documented in `sbom-gaps.md` (archived with each build). **Mitigation:** `grype` scans the compiled `zephyr.elf` binary directly. Upgrade to Zephyr v3.4+ for complete SPDX output.
+> **SBOM generation is severely limited in Zephyr v3.2.x.** `west spdx` captures only file hashes — no component names, versions, or license metadata. This makes CVE scanning via auto-generated SBOM impossible.
+>
+> **Practical solution for this lab:** [`sbom.cdx.json`](sbom.cdx.json) is a **manually crafted** CycloneDX SBOM using `pkg:generic` PURLs and CPEs, modelled on the known Zephyr 3.2.0 component tree. Grype and Dependency-Track use this as their scan input. Upgrade to Zephyr v3.4+ for automatic `west spdx` output with component metadata.
 
 ### SBOM Tool Evaluation
 
 | Tool | Understands Zephyr? | Output | Verdict |
 |---|---|---|---|
-| `trivy fs` | ❌ No | Empty SBOM | Does not understand west/CMake |
-| `west spdx` | ✅ Yes | SPDX 2.3 | **Primary** — walks actual build graph; incomplete in v3.2.x |
-| `syft convert` | ✅ (converter) | CycloneDX | Converts SPDX → CDX for downstream tools |
-| `grype` | ✅ Yes | JSON CVE report | **Mitigation** — binary scan via Anchore CDN; reliable from GitHub Actions (see Tool Selection Notes) |
+| `west spdx` | ✅ Yes | SPDX 2.3 (file hashes only in 3.2.x) | ❌ **Not usable for CVE scanning** in v3.2.x — no component names/versions |
+| `trivy fs` | ❌ No | Empty | Does not understand west/CMake build graph |
+| Manual `sbom.cdx.json` | ✅ (handcrafted) | CycloneDX JSON | ✅ **Primary scan input** — `pkg:generic` PURLs + CPEs enable CVE matching |
+| `grype sbom:sbom.cdx.json` | ✅ Yes | JSON CVE report | ✅ **Recommended CI gate** — CPE/NVD matching, 54 CVEs found |
+| Dependency-Track | ✅ Yes | Dashboard + alerts | ✅ **Recommended for continuous monitoring** — 55 CVEs, multi-source DB |
 
 ## Hardware Bill of Materials (HBOM)
 
@@ -105,7 +106,7 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 | Stage | What it does | Key tools |
 |---|---|---|
 | **Lint** | Code style & formatting check (fast-fail) | `cpplint`, `clang-format`, `cmake-format` |
-| **Build + SBOM** | Cross-compile firmware for nRF5340, generate SBOM | `west build`, Zephyr SDK v0.15.1, `west spdx` → `syft` (CycloneDX) |
+| **Build + SBOM** | Cross-compile firmware for nRF5340; SBOM auto-gen limited in v3.2.x — manual [`sbom.cdx.json`](sbom.cdx.json) used for CVE scanning | `west build`, Zephyr SDK v0.15.1; `west spdx` (file hashes only — insufficient for CVE scan) |
 | **Unit Test** | Run tests on `native_posix` with coverage | Zephyr Twister, Ztest, `gcovr` |
 | **SAST · cppcheck** | Semantic C analysis — null deref, buffer OOB, UB, memory leaks | `cppcheck` + Gitleaks |
 | **SAST · Semgrep** | Pattern-based security analysis — C security anti-patterns | Semgrep (`config: auto`) |
@@ -117,22 +118,21 @@ The GitHub Actions pipeline ([`.github/workflows/pipeline.yml`](.github/workflow
 ### SBOM Flow
 
 ```
-Build stage
-  └─ west spdx → SPDX 2.3           ← primary (understands Zephyr build graph)
-  └─ syft convert → CycloneDX JSON  ← for downstream CVE scanner consumption
-  └─ sbom-gaps.md                   ← CRA Annex I gap documentation
+sbom.cdx.json  ← manually crafted (pkg:generic PURLs + CPEs)
+  ⚠ west spdx v3.2.x: file hashes only — no component names/versions
+  ⚠ trivy fs: empty output — does not understand west/CMake
         │
         ▼  (all 5 run in parallel after build + test)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │  sast-cppcheck   cppcheck (C semantic) + Gitleaks (secrets)              │
   │  sast-semgrep    Semgrep pattern-based SAST (C rules)                    │
-  │  scan-grype      grype sbom:sbom.cdx.json                                │
-  │  scan-trivy      trivy sbom sbom.cdx.json + license check                │
-  │  scan-deptrack   DT API v1 PUT /bom upload                               │
+  │  scan-grype      grype sbom:sbom.cdx.json  ← primary CVE gate (54 CVEs) │
+  │  scan-trivy      trivy sbom sbom.cdx.json  ← 0 CVEs (documented gap)    │
+  │  scan-deptrack   DT upload  ← continuous monitoring (55 CVEs)            │
   └─────────────────────────────────────────────────────────────────────────────┘
         │
         ▼
-  Package stage archives SBOM + HBOM alongside signed firmware
+  Package stage archives sbom.cdx.json + hbom.cdx.json alongside signed firmware
 ```
 
 ### Pipeline Triggers
