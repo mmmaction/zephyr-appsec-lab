@@ -26,16 +26,16 @@
       "type": "library",
       "bom-ref": "zephyr-rtos",
       "name": "zephyr",
-      "version": "3.2.0",
+      "version": "3.2.99",
       "description": "Zephyr Real-Time Operating System",
       "supplier": { "name": "zephyrproject-rtos" },
-      "purl": "pkg:generic/zephyr@3.2.0",
-      "cpe": "cpe:2.3:o:zephyrproject:zephyr:3.2.0:*:*:*:*:*:*:*",
+      "purl": "pkg:generic/zephyr@3.2.99",
+      "cpe": "cpe:2.3:o:zephyrproject:zephyr:3.2.99:*:*:*:*:*:*:*",
       "licenses": [{ "license": { "id": "Apache-2.0" } }],
       "externalReferences": [
         {
           "type": "vcs",
-          "url": "https://github.com/zephyrproject-rtos/zephyr/tree/v3.2.0"
+          "url": "https://github.com/zephyrproject-rtos/zephyr/tree/v3.2.99"
         }
       ]
     },

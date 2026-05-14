@@ -8,7 +8,7 @@
 [![Gitleaks](https://img.shields.io/badge/security-gitleaks-blue)](https://github.com/gitleaks/gitleaks)
 [![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-blue)](https://cyclonedx.org/)
 <!-- SDK -->
-[![Zephyr RTOS](https://img.shields.io/badge/Zephyr%20RTOS-v3.2.0-1a1a2e)](https://zephyrproject.org)
+[![Zephyr RTOS](https://img.shields.io/badge/Zephyr%20RTOS-v3.2.99-1a1a2e)](https://zephyrproject.org)
 <!-- License -->
 [![License](https://img.shields.io/github/license/mmmaction/zephyr-appsec-lab)](LICENSE)
 
@@ -61,9 +61,9 @@ This demonstrates:
 - cppcheck catches real memory safety classes (OOB write, UB, leak) that compilers often miss
 - The tool is actively scanning, not silently passing
 
-### 3. Known CVEs – Zephyr 3.2.0 (grype / Dependency-Track)
+### 3. Known CVEs – Zephyr 3.2.99 (grype / Dependency-Track)
 
-See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-320-manual-sbom) below. 54 CVEs intentionally present via the pinned Zephyr 3.2.0 version.
+See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-3299-manual-sbom) below. 49 CVEs intentionally present via the pinned Zephyr 3.2.99 version.
 
 ---
 
@@ -71,12 +71,12 @@ See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-320-man
 
 | Component | Version | SBOM-relevant |
 |---|---|---|
-| Zephyr RTOS | v3.2.0 | ✅ |
+| Zephyr RTOS | v3.2.99 | ✅ |
 | Zephyr SDK (ARM toolchain) | v0.15.1 | ✅ |
 
 > **SBOM generation is severely limited in Zephyr v3.2.x.** `west spdx` captures only file hashes — no component names, versions, or license metadata. This makes CVE scanning via auto-generated SBOM impossible.
 >
-> **Practical solution for this lab:** [`sbom.cdx.json`](sbom.cdx.json) is a **manually crafted** CycloneDX SBOM using `pkg:generic` PURLs and CPEs, modelled on the known Zephyr 3.2.0 component tree. Grype and Dependency-Track use this as their scan input. Upgrade to Zephyr v3.4+ for automatic `west spdx` output with component metadata.
+> **Practical solution for this lab:** [`sbom.cdx.json`](sbom.cdx.json) is a **manually crafted** CycloneDX SBOM using `pkg:generic` PURLs and CPEs, modelled on the known Zephyr 3.2.99 component tree. Grype and Dependency-Track use this as their scan input. Upgrade to Zephyr v3.4+ for automatic `west spdx` output with component metadata.
 
 ### SBOM Tool Evaluation
 
@@ -85,7 +85,7 @@ See [CVE Scanner Comparison](#cve-scanner-comparison-lab-results--zephyr-320-man
 | `west spdx` | ✅ Yes | SPDX 2.3 (file hashes only in 3.2.x) | ❌ **Not usable for CVE scanning** in v3.2.x — no component names/versions |
 | `trivy fs` | ❌ No | Empty | Does not understand west/CMake build graph |
 | Manual `sbom.cdx.json` | ✅ (handcrafted) | CycloneDX JSON | ✅ **Primary scan input** — `pkg:generic` PURLs + CPEs enable CVE matching |
-| `grype sbom:sbom.cdx.json` | ✅ Yes | JSON CVE report | ✅ **Recommended CI gate** — CPE/NVD matching, 54 CVEs found |
+| `grype sbom:sbom.cdx.json` | ✅ Yes | JSON CVE report | ✅ **Recommended CI gate** — CPE/NVD matching, 49 CVEs found |
 | Dependency-Track | ✅ Yes | Dashboard + alerts | ✅ **Recommended for continuous monitoring** — 55 CVEs, multi-source DB |
 
 ## Hardware Bill of Materials (HBOM)
@@ -126,9 +126,9 @@ sbom.cdx.json  ← manually crafted (pkg:generic PURLs + CPEs)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │  sast-cppcheck   cppcheck (C semantic) + Gitleaks (secrets)              │
   │  sast-semgrep    Semgrep pattern-based SAST (C rules)                    │
-  │  scan-grype      grype sbom:sbom.cdx.json  ← primary CVE gate (54 CVEs) │
+  │  scan-grype      grype sbom:sbom.cdx.json  ← primary CVE gate (49 CVEs) │
   │  scan-trivy      trivy sbom sbom.cdx.json  ← 0 CVEs (documented gap)    │
-  │  scan-deptrack   DT upload  ← continuous monitoring (55 CVEs)            │
+  │  scan-deptrack   DT upload  ← continuous monitoring (45 CVEs)            │
   └─────────────────────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -144,7 +144,7 @@ sbom.cdx.json  ← manually crafted (pkg:generic PURLs + CPEs)
 | Schedule | Weekly Monday 07:00 UTC (Trivy vuln DB refresh) |
 | Manual | `workflow_dispatch` |
 
-### SAST Comparison (lab results — Zephyr 3.2.0 hello_app)
+### SAST Comparison (lab results — Zephyr 3.2.99 hello_app)
 
 > **Scan date: 2026-05-08.** Findings reflect the demo hello_app C source (`src/`). Real-world firmware with complex state machines, network stacks, or crypto will produce more findings.
 
@@ -155,23 +155,23 @@ sbom.cdx.json  ← manually crafted (pkg:generic PURLs + CPEs)
 
 **Key finding:** 0 findings is expected for the minimal demo code. Both tools are complementary — cppcheck understands C memory semantics deeply; Semgrep catches known-bad API usage patterns quickly. CodeQL (C/C++) would be the next upgrade but requires compiler instrumentation compatible with Zephyr's west build system.
 
-### CVE Scanner Comparison (lab results — Zephyr 3.2.0 manual SBOM)
+### CVE Scanner Comparison (lab results — Zephyr 3.2.99 manual SBOM)
 
 Manual SBOM [`sbom.cdx.json`](sbom.cdx.json) uses `pkg:generic` PURLs and CPEs to maximise scanner compatibility.
 
-> **Scan date: 2026-05-08.** CVE counts reflect the vulnerability databases at that date. Counts will increase over time as new CVEs are published — re-run `grype sbom:sbom.cdx.json` or refresh the Dependency-Track project to get current numbers.
+> **Scan date: 2026-05-14.** CVE counts reflect the vulnerability databases at that date. Counts will increase over time as new CVEs are published — re-run `grype sbom:sbom.cdx.json` or refresh the Dependency-Track project to get current numbers.
 
 | Tool | CVEs found | Critical | High | Medium | Notes |
 |---|---|---|---|---|---|
-| **grype** | **54** | **13** | **21** | **20** | CPE/NVD matching. **Recommended for CI/CD gate.** |
+| **grype** | **49** | **12** | **19** | **18** | CPE/NVD matching. **Recommended for CI/CD gate.** |
 | **trivy** | 0 | — | — | — | ❌ No database for `pkg:generic` / firmware. Use for license check only. |
-| **Dependency-Track** | **55** | **13** | **22** | **20** | NVD + OSS Index + GitHub Advisories. +1 High vs grype. **Recommended for continuous monitoring.** |
+| **Dependency-Track** | **45** | **8** | **19** | **18** | NVD + OSS Index + GitHub Advisories. **Recommended for continuous monitoring.** |
 
 **Key finding:** Trivy is an excellent scanner for container/OS/language ecosystems (npm, pip, Alpine, etc.) but **cannot match CVEs for firmware components** — it has no ecosystem DB for `pkg:generic`. It will always report 0 CVEs for Zephyr projects. Do **not** use trivy as a security gate for embedded firmware.
 
-**Dependency-Track** is fully open source (OWASP, Apache 2.0). It queries NVD, OSS Index, and GitHub Advisory Database — which is why it found **55 CVEs (13C/22H/20M)**, one more High than grype's NVD-only scan. The key advantage is continuous re-scanning: if a new CVE is published tomorrow for Zephyr 3.2.0, DT alerts without needing a new build. Activate CI integration by adding `DT_URL` + `DT_API_KEY` secrets (see `docker-compose.yml` for local setup).
+**Dependency-Track** is fully open source (OWASP, Apache 2.0). It queries NVD, OSS Index, and GitHub Advisory Database — which is why it found **45 CVEs (8C/19H/18M)**, matching grype's High/Medium count. The key advantage is continuous re-scanning: if a new CVE is published tomorrow for Zephyr 3.2.99, DT alerts without needing a new build. Activate CI integration by adding `DT_URL` + `DT_API_KEY` secrets (see `docker-compose.yml` for local setup).
 
-#### Notable grype findings (Zephyr 3.2.0)
+#### Notable grype findings (Zephyr 3.2.99)
 
 | CVE | Severity | Fixed in | Description |
 |---|---|---|---|
@@ -217,13 +217,13 @@ cve-bin-tool --disable-data-source REDHAT --disable-data-source PURL2CPE \
 ```
 Download `zephyr.elf` from the `firmware` CI artifact: `gh run download --repo mmmaction/zephyr-appsec-lab --name firmware -D firmware/`
 
-**CI resolution:** `grype` scans the manual [`sbom.cdx.json`](sbom.cdx.json) using `pkg:generic` PURLs and CPE entries. With CPE matching enabled grype resolves CVEs via NVD and found **54 CVEs** (13 critical) for Zephyr 3.2.0 — making it the **primary CVE gate** in CI. The auto-generated SBOM from `west spdx` v3.2.x (file hashes only) remains the authoritative SBOM for CRA Annex I; the manual SBOM bridges the gap for scanning until Zephyr v3.4+ is adopted.
+**CI resolution:** `grype` scans the manual [`sbom.cdx.json`](sbom.cdx.json) using `pkg:generic` PURLs and CPE entries. With CPE matching enabled grype resolves CVEs via NVD and found **49 CVEs** (12 critical) for Zephyr 3.2.99 — making it the **primary CVE gate** in CI. The auto-generated SBOM from `west spdx` v3.2.x (file hashes only) remains the authoritative SBOM for CRA Annex I; the manual SBOM bridges the gap for scanning until Zephyr v3.4+ is adopted.
 
 ### Trivy: CVE scanning limitation for firmware
 
 Trivy is kept in the pipeline for **license compliance only**. It has no CVE database for `pkg:generic` ecosystem components and will always return 0 CVEs for firmware/C projects. This is intentional and documented — the `scan-trivy` job has `exit-code: 0` and explicit comments explaining it cannot be used as a security gate for embedded firmware.
 
-**Lab validation result:** `trivy sbom sbom.cdx.json` → 0 CVEs (confirmed false negative against same SBOM where grype finds 54 CVEs).
+**Lab validation result:** `trivy sbom sbom.cdx.json` → 0 CVEs (confirmed false negative against same SBOM where grype finds 49 CVEs).
 
 ### Coverage reporting: gcovr auto-config
 
@@ -237,7 +237,7 @@ Trivy is kept in the pipeline for **license compliance only**. It has no CVE dat
 
 ### Prerequisites
 
-- Zephyr SDK v0.15.1 (ARM toolchain) — [install guide](https://docs.zephyrproject.org/3.2.0/develop/toolchains/zephyr_sdk.html)
+- Zephyr SDK v0.15.1 (ARM toolchain) — [install guide](https://docs.zephyrproject.org/3.2.99/develop/toolchains/zephyr_sdk.html)
 - `west` (`pip install west`)
 
 ### Build
