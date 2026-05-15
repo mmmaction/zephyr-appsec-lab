@@ -159,15 +159,16 @@ sbom.cdx.json  ← manually crafted (pkg:generic PURLs + CPEs)
 
 Manual SBOM [`sbom.cdx.json`](sbom.cdx.json) uses `pkg:generic` PURLs and CPEs to maximise scanner compatibility.
 
-> **Scan date: 2026-05-14.** CVE counts reflect the vulnerability databases at that date. Counts will increase over time as new CVEs are published — re-run `grype sbom:sbom.cdx.json` or refresh the Dependency-Track project to get current numbers.
+> **Scan date: 2026-05-15.** CVE counts reflect the vulnerability databases at that date. Counts will increase over time as new CVEs are published — re-run `grype sbom:sbom.cdx.json` or refresh the Dependency-Track project to get current numbers.
 
-| Tool | CVEs found | Critical | High | Medium | Notes |
-|---|---|---|---|---|---|
-| **grype** | **49** | **12** | **19** | **18** | CPE/NVD matching. **Recommended for CI/CD gate.** |
-| **trivy** | 0 | — | — | — | ❌ No database for `pkg:generic` / firmware. Use for license check only. |
-| **Dependency-Track** | **45** | **8** | **19** | **18** | NVD + OSS Index + GitHub Advisories. **Recommended for continuous monitoring.** |
+| Tool | CVEs found | Critical | High | Medium | Low | Notes |
+|---|---|---|---|---|---|---|
+| **grype** | **49** | **12** | **19** | **18** | 0 | CPE/NVD matching. **Recommended for CI/CD gate.** |
+| **trivy** | 0 | — | — | — | — | ❌ No database for `pkg:generic` / firmware. Use for license check only. |
+| **Dependency-Track** | **45** | **8** | **19** | **18** | 0 | NVD + OSS Index. **Recommended for continuous monitoring.** |
+| **Snyk** | **60** | **1** | **35** | **22** | **2** | `snyk sbom test --experimental` via `pkg:generic` PURLs. Proprietary DB — highest CVE count, different severity distribution vs grype/DT. |
 
-**Key finding:** Trivy is an excellent scanner for container/OS/language ecosystems (npm, pip, Alpine, etc.) but **cannot match CVEs for firmware components** — it has no ecosystem DB for `pkg:generic`. It will always report 0 CVEs for Zephyr projects. Do **not** use trivy as a security gate for embedded firmware.
+**Key finding:** Trivy is an excellent scanner for container/OS/language ecosystems (npm, pip, Alpine, etc.) but **cannot match CVEs for firmware components** — it has no ecosystem DB for `pkg:generic`. It will always report 0 CVEs for Zephyr projects. Do **not** use trivy as a security gate for embedded firmware. Snyk finds the most CVEs (60) via its proprietary DB but with a notably different severity distribution (fewer Critical, more High) than grype or DT — reflecting different scoring methodologies across databases.
 
 **Dependency-Track** is fully open source (OWASP, Apache 2.0). It queries NVD, OSS Index, and GitHub Advisory Database — which is why it found **45 CVEs (8C/19H/18M)**, matching grype's High/Medium count. The key advantage is continuous re-scanning: if a new CVE is published tomorrow for Zephyr 3.2.99, DT alerts without needing a new build. Activate CI integration by adding `DT_URL` + `DT_API_KEY` secrets (see `docker-compose.yml` for local setup).
 
